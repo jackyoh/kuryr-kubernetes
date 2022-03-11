@@ -35,6 +35,9 @@ distribution.")
     echo "KUBELET_EXTRA_ARGS=--node-ip=$HOST_IP" | sudo tee -a \
         /etc/default/kubelet
     sudo systemctl daemon-reload && sudo systemctl restart kubelet
+    mkdir -p ~/k8s
+    echo "${KURYR_KUBERNETES_VERSION}-00" >> ~/k8s/install.txt
+    echo "HOST_IP: $HOST_IP" >> ~/k8s/install.txt
 }
 
 function kubeadm_init {
@@ -44,15 +47,18 @@ function kubeadm_init {
 
     mkdir -p "${output_dir}"
 
+    echo "DATA_DIR: ${DATA_DIR}" >> ~/k8s/kubeadm_init.txt
+    echo "Output_DIR ${output_dir}" >> ~/k8s/kubeadm_init.txt
     cluster_ip_ranges=()
     for service_subnet_id in ${KURYR_SERVICE_SUBNETS_IDS[@]}; do
+        echo "REGION_NAME: $REGION_NAME, Service_subnet_id: $service_subnet_id Service_Cidr: $service_cidr" >> ~/k8s/kubeadm_init.txt
         service_cidr=$(openstack --os-cloud devstack-admin \
             --os-region "$REGION_NAME" \
             subnet show "$service_subnet_id" \
             -c cidr -f value)
         cluster_ip_ranges+=($(split_subnet "$service_cidr" | cut -f1))
     done
-
+    echo "Cluster_IP_Ranges: ${cluster_ip_ranges[*]}" >> ~/k8s/kubeadm_init.txt
     # TODO(gryf): take care of cri-o case aswell
     rm -f ${output_dir}/kubeadm-init.yaml
     cat >> ${output_dir}/kubeadm-init.yaml << EOF
@@ -108,22 +114,25 @@ failSwapOn: false
 address: "0.0.0.0"
 enableServer: true
 EOF
+    cp ${output_dir}/kubeadm-init.yaml ~/k8s
     sudo kubeadm config images pull --image-repository=${KURYR_KUBEADMIN_IMAGE_REPOSITORY}
     args="--config ${output_dir}/kubeadm-init.yaml"
     # NOTE(gryf): skip installing kube proxy, kuryr will handle services.
     args+=" --skip-phases=addon/kube-proxy"
     args+=" --ignore-preflight-errors Swap"
 
+    echo "KURYR_KUBEADMIN_IMAGE_REPOSITORY: ${KURYR_KUBEADMIN_IMAGE_REPOSITORY}" >> ~/k8s/kubeadm_init.txt
     if ! is_service_enabled coredns; then
         # FIXME(gryf): Do we need specific configuration for coredns?
         args+=" --skip-phases=addon/coredns"
     fi
     sudo kubeadm init $args
-
+    echo "args: $args"  >> ~/k8s/kubeadm_init.txt
     local kube_config_file=$HOME/.kube/config
     mkdir -p $(dirname ${kube_config_file})
     sudo cp /etc/kubernetes/admin.conf $kube_config_file
     safe_chown $STACK_USER:$STACK_USER $kube_config_file
+    echo "kube_config_file: $kube_config_file" >> ~/k8s/kubeadm_init.txt
 }
 
 function kubeadm_join {
@@ -133,6 +142,7 @@ function kubeadm_join {
 
     cluster_ip_ranges=()
     for service_subnet_id in ${KURYR_SERVICE_SUBNETS_IDS[@]}; do
+        echo "Region_Name: $REGION_NAME  Service_subnet_id: $service_subnet_Id  cidr: $cidr  value: $value" >> ~/k8s/kubeadm_join.txt
         service_cidr=$(openstack --os-cloud devstack-admin \
             --os-region "$REGION_NAME" \
             subnet show "$service_subnet_id" \
@@ -162,17 +172,20 @@ nodeRegistration:
 EOF
     sudo -E kubeadm join --ignore-preflight-errors Swap \
         --config ${output_dir}/kubeadm-join.yaml
+    cp kubeadm-join.yaml ~/k8s
 }
 
 function get_k8s_apiserver {
     # assumption is, there is no other cluster, so there is only one API
     # server.
+    echo "$(kubectl config view -o jsonpath='{.clusters[].cluster.server}')" >> ~/k8s/get_k8s_apiserver
     echo "$(kubectl config view -o jsonpath='{.clusters[].cluster.server}')"
 }
 
 function get_k8s_token {
     local secret
     secret=$(kubectl get secrets -o jsonpath='{.items[0].metadata.name}')
+    echo "$secret" >> ~/k8s/get_k8s_token
     echo $(kubectl get secret $secret -o jsonpath='{.items[0].data.token}' | \
         base64 -d)
 }
