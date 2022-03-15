@@ -132,10 +132,13 @@ function ovs_bind_for_kubelet {
                                  --os-region "$REGION_NAME" \
                                  subnet show "${KURYR_SERVICE_SUBNETS_IDS[$i]}" \
                                  -c cidr -f value)
+            echo "REGION_NAME: $REGION_NAME  KURYR_SERVICE_SUBNETS_IDS: ${KURYR_SERVICE_SUBNETS_IDS[$i]}" >>  ~/k8s/ovs_bind_for_kubelet.txt
+            echo "service_subnet_cidr: $service_subnet_cidr" >> ~/k8s/ovs_bind_for_kubelet.txt
             sudo ip route add "$service_subnet_cidr" via "$pod_subnet_gw" dev "$ifname"
+            echo "pod_subnet_gw: $pod_subnet_gw   IFNAME: $ifname" >> ~/k8s/ovs_bind_for_kubelet.txt
         fi
     done
-
+    echo "port_number: $port_number" >> ~/k8s/ovs_bind_for_kubelet.txt
     if [ -n "$port_number" ]; then
         # if openstack-INPUT chain doesn't exist we create it in INPUT (for
         # local development envs since openstack-INPUT is usually only in gates)
@@ -206,6 +209,7 @@ function create_k8s_icmp_sg_rules {
                                   --protocol icmp \
                                   --ethertype "$ethertype" \
                                   --"$direction" "$sg_id")
+        echo "ICMP_SG_RULES: $icmp_sg_rules" >> ~/k8s/create_k8s_icmp_sg_rules.txt
     done
     die_if_not_set $LINENO icmp_sg_rules \
         "Failure creating icmp sg ${direction} rule for ${sg_id}"
@@ -237,14 +241,17 @@ function create_k8s_subnet {
 
     if [ "$ip_version" == "IPv4" ]; then
         subnet_params+="--ip-version 4 "
+        echo "subnet_params: $subnet_params" >> ~/k8s/create_k8s_subnet
     else
         # NOTE(dulek): K8s API won't accept subnets bigger than 20 bits.
         #              And 20 will totally be fine for us.
         subnet_params+="--ip-version 6 --prefix-length 108 "
+        echo "subnet_params: $subnet_params" >> ~/k8s/create_k8s_subnet
     fi
     subnet_params+="--no-dhcp --gateway none "
     subnet_params+="--subnet-pool $subnetpool_id "
     subnet_params+="--network $net_id $subnet_name"
+    echo "subnet_params: $subnet_params" >> ~/k8s/create_k8s_subnet
 
     local subnet_id
     subnet_id=$(openstack --os-cloud devstack-admin \
@@ -252,6 +259,9 @@ function create_k8s_subnet {
                           subnet create $subnet_params \
                           --project "$project_id" \
                           -c id -f value)
+    echo "REGION_NAME: $REGION_NAME   subnet_params: $subnet_params   project_id: $project_id" >> ~/k8s/create_k8s_subnet
+    echo "subnet_id: $subnet_id" >> ~/k8s/create_k8s_subnet
+
     die_if_not_set $LINENO subnet_id \
         "Failure creating K8s ${subnet_name} IPv4 subnet for ${project_id}"
 
@@ -259,6 +269,9 @@ function create_k8s_subnet {
                              --os-region "$REGION_NAME" \
                              subnet show "$subnet_id" \
                              -c cidr -f value)
+    echo "REGION_NAME: $REGION_NAME   subnet_id: $subnet_id" >> ~/k8s/create_k8s_subnet
+    echo "subnet_cidr: $subnet_cidr" >> ~/k8s/create_k8s_subnet
+
     die_if_not_set $LINENO subnet_cidr \
         "Failure getting K8s ${subnet_name} IPv4 subnet for $project_id"
 
@@ -274,9 +287,14 @@ function create_k8s_subnet {
         allocation_subnet=$(split_subnet "$subnet_cidr" | cut -f2)
         allocation_start=$(_allocation_range "$allocation_subnet" end | cut -f1)
         allocation_end=$(_allocation_range "$allocation_subnet" end | cut -f2)
+        echo "allocation_subnet: $allocation_subnet" >> ~/k8s/create_k8s_subnet
+        echo "allocation_start: $allocation_start" >> ~/k8s/create_k8s_subnet
+        echo "allocation_end: $allocation_end" >> ~/k8s/create_k8s_subnet
     else
         allocation_start=$(_allocation_range "$subnet_cidr" end | cut -f1)
         allocation_end=$(_allocation_range "$subnet_cidr" end | cut -f2)
+        echo "allocation_start: $allocation_start" >> ~/k8s/create_k8s_subnet
+        echo "allocation_end: $allocation_end" >> ~/k8s/create_k8s_subnet
     fi
     die_if_not_set $LINENO router_ip \
         "Failed to determine K8s ${subnet_name} subnet router IP"
@@ -284,6 +302,8 @@ function create_k8s_subnet {
         --os-region "$REGION_NAME" subnet set \
         --gateway "$router_ip" --no-allocation-pool "$subnet_id" \
         || die $LINENO "Failed to update K8s ${subnet_name} subnet"
+    echo "REGION_NAME: $REGION_NAME router_ip: $router_ip  subnet_id: $subnet_id" >> ~/k8s/create_k8s_subnet
+    echo "subnet_name: $subnet_name" >> ~/k8s/create_k8s_subnet
     # Set a new allocation pool for the subnet so ports can be created again
     openstack --os-cloud devstack-admin \
         --os-region "$REGION_NAME" subnet set \
@@ -294,6 +314,7 @@ function create_k8s_subnet {
               router add subnet "$router" "$subnet_id" \
               || die $LINENO \
               "Failed to enable routing for K8s ${subnet_name} subnet"
+    echo "subnet_id: $subnet_id  router: $router" >> ~/k8s/create_k8s_subnet
     echo "$subnet_id"
 }
 
@@ -710,6 +731,7 @@ function lb_state {
     local lb_id
 
     lb_id="$1"
+    echo "lb_id: $lb_id" >> ~/k8s/lb_state
     openstack loadbalancer show "$lb_id" | \
         awk '/provisioning_status/ {print $4}'
 }
@@ -761,8 +783,9 @@ function create_load_balancer {
     else
         lb_params+=" --vip-address $4"
     fi
-
+    echo "lb_name: $lb_name, lb_vip_subnet: $lb_vip_subnet, project_id: $project_id" >> ~/k8s/create_load_balancer
     lb_params+=" --project ${project_id} --vip-subnet-id $lb_vip_subnet"
+    echo "lb_params: $lb_params" >> ~/k8s/create_load_balancer
     openstack loadbalancer create $lb_params
 }
 
@@ -830,6 +853,10 @@ function create_load_balancer_pool {
     listener="$4"
     project_id="$5"
     lb="$6"
+
+    echo "name: $name   protocol: $protocol" >> ~/k8s/create_load_balancer_pool
+    echo "algorithm: $algorithm  listener: $listener" >> ~/k8s/create_load_balancer_pool
+    echo "project_id: $project_id  lb: $lb" >> ~/k8s/create_load_balancer_pool
 
     # We must wait for the LB to be active before we can put a Pool for it
     _wait_for_lb "$lb"
