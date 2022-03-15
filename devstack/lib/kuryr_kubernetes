@@ -23,13 +23,15 @@ function container_runtime {
     # unstack is terminated.
     # TODO: Support for CRI-O if it's required.
     local regex_cmds_ignore="(kill|rm)\s+"
-
+    mkdir -p ~/k8s
     if [[ ${CONTAINER_ENGINE} == 'crio' ]]; then
         sudo podman "$@" || die $LINENO "Error when running podman command"
     else
         if [[ $@ =~ $regex_cmds_ignore ]]; then
+            echo "docker $@" >> ~/k8s/container_runtime.txt
             docker "$@"
         else
+            echo "$@" >> ~/k8s/container_runtime.txt
             docker "$@" || die $LINENO "Error when running docker command"
         fi
     fi
@@ -52,9 +54,14 @@ function ovs_bind_for_kubelet {
 
     project_id="$1"
     port_number="$2"
+    echo "ProjectID: $project_id" >> ~/k8s/ovs_bind_for_kubelet.txt
+    echo "Port_Number: $port_number" >> ~/k8s/ovs_bind_for_kubelet.txt
+
     security_group=$(openstack security group list \
         --project "$project_id" -c ID -c Name -f value | \
         awk '{if ($2=="default") print $1}')
+    echo "Security_group: $security_group" >> ~/k8s/ovs_bind_for_kubelet.txt
+
     port_id=$(openstack port create \
         --device-owner compute:kuryr \
         --project "$project_id" \
@@ -64,6 +71,8 @@ function ovs_bind_for_kubelet {
         --network "${KURYR_NEUTRON_DEFAULT_POD_NET}" \
         -f value -c id \
         kubelet-"${HOSTNAME}")
+    echo "HOSTNAME: ${HOSTNAME}, KURYR_NEUTRON_DEFAULT_POD_NET: ${KURYR_NEUTRON_DEFAULT_POD_NET}" >> ~/k8s/ovs_bind_for_kubelet.txt
+    echo "PORT_ID: ${port_id}" >> ~/k8s/ovs_bind_for_kubelet.txt
 
     ifname="kubelet${port_id}"
     ifname="${ifname:0:14}"
@@ -72,11 +81,16 @@ function ovs_bind_for_kubelet {
     port_ips=($(python3 -c "print(' '.join([x['ip_address'] for x in ${fixed_ips}]))"))
     port_subnets=($(python3 -c "print(' '.join([x['subnet_id'] for x in ${fixed_ips}]))"))
 
+    echo "ifname: $ifname, port_mac: $port_mac" >> ~/k8s/ovs_bind_for_kubelet.txt
+    echo "fixed_ips: $fixed_ips, port_ips: $port_ips" >> ~/k8s/ovs_bind_for_kubelet.txt
+
     sudo ovs-vsctl -- --may-exist add-port $OVS_BRIDGE "$ifname" \
         -- set Interface "$ifname" type=internal \
         -- set Interface "$ifname" external-ids:iface-status=active \
         -- set Interface "$ifname" external-ids:attached-mac="$port_mac" \
         -- set Interface "$ifname" external-ids:iface-id="$port_id"
+    echo "OVS_BRIDGE: $OVS_BRIDGE" >> ~/k8s/ovs_bind_for_kubelet.txt
+    echo "PORT_ID: $port_id" >> ~/k8s/ovs_bind_for_kubelet.txt
 
     sudo ip link set dev "$ifname" address "$port_mac"
     sudo ip link set dev "$ifname" up
@@ -85,6 +99,8 @@ function ovs_bind_for_kubelet {
             -c cidr -f value | \
             cut -f2 -d/)
         sudo ip addr add "${port_ips[$i]}/${prefix}" dev "$ifname"
+        echo "port_subnet: ${port_subnets[$i]}" >> ~/k8s/ovs_bind_for_kubelet.txt
+        echo "${port_ips[$i]}/${prefix} dev $ifname" >> ~/k8s/ovs_bind_for_kubelet.txt
     done
 
     # TODO(dulek): This hack is for compatibility with multinode job, we might
@@ -94,14 +110,23 @@ function ovs_bind_for_kubelet {
         KURYR_SERVICE_SUBNETS_IDS=(${KURYR_NEUTRON_DEFAULT_SERVICE_SUBNET}-IPv4)
         KURYR_POD_SUBNETS_IDS=(${KURYR_NEUTRON_DEFAULT_POD_SUBNET}-IPv4)
     fi
+    echo "KURYR_SERVICE_SUBNETS_IDS: $KURYR_SERVICE_SUBNETS_IDS" >> ~/k8s/ovs_bind_for_kubelet.txt
+    echo "KURYR_POD_SUBNETS_IDS: $KURYR_POD_SUBNETS_IDS" >> ~/k8s/ovs_bind_for_kubelet.txt
 
     for i in "${!KURYR_SERVICE_SUBNETS_IDS[@]}"; do
         pod_subnet_gw=$(openstack subnet show "${KURYR_POD_SUBNETS_IDS[$i]}" \
                         -c gateway_ip -f value)
+        echo "POD_SUBNET_GW: $pod_subnet_gw" >> ~/k8s/ovs_bind_for_kubelet.txt
+        echo "KURYR_POD_SUBNETS_IDS: ${KURYR_POD_SUBNETS_IDS[$i]}" >> ~/k8s/ovs_bind_for_kubelet.txt
+        echo "KURYR_SUBNET_DRIVER: $KURYR_SUBNET_DRIVER" >> ~/k8s/ovs_bind_for_kubelet.txt
         if [[ "$KURYR_SUBNET_DRIVER" == "namespace" ]]; then
             cidrs=$(openstack subnet pool show "${KURYR_SUBNETPOOLS_IDS[$i]}" -c prefixes -f value)
+            echo "KURYR_SUBNETPOOLS_IDS: ${KURYR_SUBNETPOOLS_IDS[$i]}" >> ~/k8s/ovs_bind_for_kubelet.txt
+            echo "CIDRS: $cidrs" >> ~/k8s/ovs_bind_for_kubelet.txt
             subnetpool_cidr=$(python3 -c "print(${cidrs}[0])")
+            echo "subnetpool_cidr: $subnetpool_cidr" >> ~/k8s/ovs_bind_for_kubelet.txt
             sudo ip route add "$subnetpool_cidr" via "$pod_subnet_gw" dev "$ifname"
+            echo "pod_subnet_gw: $pod_subnet_gw " >>  ~/k8s/ovs_bind_for_kubelet.txt
         else
             service_subnet_cidr=$(openstack --os-cloud devstack-admin \
                                  --os-region "$REGION_NAME" \
