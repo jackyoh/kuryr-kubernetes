@@ -815,6 +815,10 @@ function create_load_balancer_listener {
     project_id="$5"
     data_timeouts="$6"
 
+    echo "name: $name  protocol: $protocol" >> ~/k8s/create_load_balancer_listener
+    echo "port: $port lb: $lb  project_id: $project_id" >> ~/k8s/create_load_balancer_listener
+    echo "data_timeouts: $data_timeouts" >> ~/k8s/create_load_balancer_listener
+
     max_timeout=1200
     # Octavia needs the LB to be active for the listener
     _wait_for_lb "$lb" "$max_timeout"
@@ -892,6 +896,10 @@ function create_load_balancer_member {
     lb="$5"
     project_id="$6"
 
+    echo "name: $name   address: $address" >> ~/k8s/create_load_balancer_member
+    echo "port: $port   pool: $pool" >> ~/k8s/create_load_balancer_member
+    echo "lb: $lb  project_id: $project_id" >> ~/k8s/create_load_balancer_member
+
     # We must wait for the pool creation update before we can add members
     _wait_for_lb "$lb"
 
@@ -937,9 +945,11 @@ function cleanup_kuryr_devstack_iptables {
 
 function build_install_kuryr_cni {
     pushd "${KURYR_HOME}/kuryr_cni" || exit 1
+    echo "KURYR_HOME: ${KURYR_HOME}" >> ~/k8s/build_install_kuryr_cni
     hack/build-go.sh
     sudo install -o "$STACK_USER" -m 0555 -D bin/kuryr-cni \
         "${CNI_BIN_DIR}/kuryr-cni"
+    echo "CNI_BIN_DIR: ${CNI_BIN_DIR}/kuryr-cni" >> ~/k8s/build_install_kuryr_cni
     popd
 }
 
@@ -959,6 +969,7 @@ function _create_kuryr_cache_dir {
 }
 
 function _create_kuryr_lock_dir {
+    echo "STACK_USER: $STACK_USER   KURYR_LOCK_DIR: $KURYR_LOCK_DIR" >> ~/k8s/_create_kuryr_lock_dir
     # Create lock directory
     sudo install -d -o "$STACK_USER" "$KURYR_LOCK_DIR"
 }
@@ -969,13 +980,19 @@ function configure_kuryr {
     "${KURYR_HOME}/tools/generate_config_file_samples.sh"
     sudo install -o "$STACK_USER" -m 640 -D \
         "${KURYR_HOME}/etc/kuryr.conf.sample" "$KURYR_CONFIG"
+    echo "KURYR_HOME: ${KURYR_HOME}" >> ~/k8s/configure_kuryr
+    echo "KURYR_CONFIG_DIR: $KURYR_CONFIG_DIR   STACK_USER: $STACK_USER" >> ~/k8s/configure_kuryr
 
     iniset "$KURYR_CONFIG" kubernetes ssl_client_crt_file "$KURYR_K8S_API_CERT"
     iniset "$KURYR_CONFIG" kubernetes ssl_client_key_file "$KURYR_K8S_API_KEY"
+    echo "KURYR_K8S_API_CERT: $KURYR_K8S_API_CERT" >> ~/k8s/configure_kuryr
+    echo "KURYR_K8S_API_KEY: $KURYR_K8S_API_KEY" >> ~/k8s/configure_kuryr
+    echo "KURYR_K8S_API_CACERT: $KURYR_K8S_API_CACERT" >> ~/k8s/configure_kuryr
     if [ "$KURYR_K8S_API_CACERT" ]; then
         iniset "$KURYR_CONFIG" kubernetes ssl_ca_crt_file "$KURYR_K8S_API_CACERT"
         iniset "$KURYR_CONFIG" kubernetes ssl_verify_server_crt True
     fi
+    echo "KURYR_MULTI_VIF_DRIVER: $KURYR_MULTI_VIF_DRIVER" >> ~/k8s/configure_kuryr
     if [ "$KURYR_MULTI_VIF_DRIVER" ]; then
         iniset "$KURYR_CONFIG" kubernetes multi_vif_drivers "$KURYR_MULTI_VIF_DRIVER"
     fi
@@ -991,6 +1008,11 @@ function configure_kuryr {
     iniset "$KURYR_CONFIG" kubernetes pod_security_groups_driver "$KURYR_SG_DRIVER"
     iniset "$KURYR_CONFIG" kubernetes service_security_groups_driver "$KURYR_SG_DRIVER"
     iniset "$KURYR_CONFIG" kubernetes enabled_handlers "$KURYR_ENABLED_HANDLERS"
+
+    echo "ENABLE_DEBUG_LOG_LEVEL: $ENABLE_DEBUG_LOG_LEVEL" >> ~/k8s/configure_kuryr
+    echo "KURYR_SUBNET_DRIVER: $KURYR_SUBNET_DRIVER" >> ~/k8s/configure_kuryr
+    echo "KURYR_SG_DRIVER: $KURYR_SG_DRIVER" >> ~/k8s/configure_kuryr
+    echo "KURYR_ENABLED_HANDLERS: $KURYR_ENABLED_HANDLERS" >> ~/k8s/configure_kuryr
 
     # Let Kuryr retry connections to K8s API for 20 minutes.
     iniset "$KURYR_CONFIG" kubernetes watch_retry_timeout 1200
@@ -1010,6 +1032,7 @@ function configure_kuryr {
         iniset "$KURYR_CONFIG" cni_daemon netns_proc_dir "/host_proc"
     else
         iniset "$KURYR_CONFIG" oslo_concurrency lock_path "$KURYR_LOCK_DIR"
+        echo "KURYR_LOCK_DIR: $KURYR_LOCK_DIR" >> ~/k8s/configure_kuryr
         _create_kuryr_lock_dir
         iniset "$KURYR_CONFIG" cni_health_server cg_path \
             "/system.slice/system-devstack.slice/devstack@kuryr-daemon.service"
@@ -1028,6 +1051,12 @@ function configure_kuryr {
             iniset "$KURYR_CONFIG" vif_pool ports_pool_max "$KURYR_VIF_POOL_MAX"
             iniset "$KURYR_CONFIG" vif_pool ports_pool_batch "$KURYR_VIF_POOL_BATCH"
             iniset "$KURYR_CONFIG" vif_pool ports_pool_update_frequency "$KURYR_VIF_POOL_UPDATE_FREQ"
+            echo "KURYR_VIF_POOL_DRIVER: $KURYR_VIF_POOL_DRIVER" >> ~/k8s/configure_kuryr
+            echo "KURYR_VIF_POOL_MIN: $KURYR_VIF_POOL_MIN" >> ~/k8s/configure_kuryr
+            echo "KURYR_VIF_POOL_MAX: $KURYR_VIF_POOL_MAX" >> ~/k8s/configure_kuryr
+            echo "KURYR_VIF_POOL_BATCH: $KURYR_VIF_POOL_BATCH" >> ~/k8s/configure_kuryr
+            echo "KURYR_VIF_POOL_UPDATE_FREQ: $KURYR_VIF_POOL_UPDATE_FREQ" >> ~/k8s/configure_kuryr
+            echo "KURYR_VIF_POOL_MANAGER: $KURYR_VIF_POOL_MANAGER" >> ~/k8s/configure_kuryr
             if [ "$KURYR_VIF_POOL_MANAGER" ]; then
                 iniset "$KURYR_CONFIG" kubernetes enable_manager "$KURYR_VIF_POOL_MANAGER"
 
@@ -1035,8 +1064,10 @@ function configure_kuryr {
                 if [[ -z $dir ]]; then
                     dir="/run/kuryr/kuryr_manage.sock"
                 fi
+                echo "dir1: $dir" >> ~/k8s/configure_kuryr
                 dir=`dirname $dir`
                 sudo mkdir -p $dir
+                echo "dir2: $dir" >> ~/k8s/configure_kuryr
             fi
         fi
     fi
@@ -1179,6 +1210,8 @@ function _configure_neutron_defaults {
         "$KURYR_NEUTRON_DEFAULT_PROJECT" default)
     ext_svc_net_id="$(openstack network show -c id -f value \
         "${KURYR_NEUTRON_DEFAULT_EXT_SVC_NET}")"
+    echo "project_id: $project_id" >> ~/k8s/_configure_neutron_defaults
+    echo "ext_svc_net_id: $ext_svc_net_id" >> ~/k8s/_configure_neutron_defaults
 
     # If a subnetpool is not passed, we get the one created in devstack's
     # Neutron module
@@ -1189,6 +1222,7 @@ function _configure_neutron_defaults {
         export KURYR_ETHERTYPE=IPv4
         KURYR_ETHERTYPES+=("IPv4")
         KURYR_SUBNETPOOLS_IDS+=(${KURYR_NEUTRON_DEFAULT_SUBNETPOOL_ID:-${SUBNETPOOL_V4_ID}})
+        echo "KURYR_SUBNETPOOLS_IDS: $KURYR_SUBNETPOOLS_IDS" >> ~/k8s/_configure_neutron_defaults
     fi
     if [[ "$KURYR_IPV6" == "True" || "$KURYR_DUAL_STACK" == "True" ]]; then
         export KURYR_ETHERTYPE=IPv6
@@ -1215,24 +1249,33 @@ function _configure_neutron_defaults {
     fi
 
     router=${KURYR_NEUTRON_DEFAULT_ROUTER:-$Q_ROUTER_NAME}
+    echo "router: $router" >> ~/k8s/_configure_neutron_defaults
     if [ "$router" != "$Q_ROUTER_NAME" ]; then
         openstack --os-cloud devstack-admin --os-region "$REGION_NAME" \
             router create --project "$project_id" "$router"
         openstack --os-cloud devstack-admin --os-region "$REGION_NAME" \
             router set --external-gateway "$ext_svc_net_id" "$router"
+        echo "REGION_NAME: $REGION_NAME    project_id: $project_id" >> ~/k8s/_configure_neutron_defaults
+        echo "ext_svc_net_id: $ext_svc_net_id  router: $router" >> ~/k8s/_configure_neutron_defaults
     fi
     router_id="$(openstack router show -c id -f value "$router")"
+    echo "router_id: $router_id" >> ~/k8s/_configure_neutron_defaults
 
     pod_net_id=$(openstack --os-cloud devstack-admin \
                        --os-region "$REGION_NAME" \
                        network create --project "$project_id" \
                        "$KURYR_NEUTRON_DEFAULT_POD_NET" \
                        -c id -f value)
+    echo "KURYR_NEUTRON_DEFAULT_POD_NET: $KURYR_NEUTRON_DEFAULT_POD_NET" >> ~/k8s/_configure_neutron_defaults
+    echo "pod_net_id: $pod_net_id" >> ~/k8s/_configure_neutron_defaults
+
     service_net_id=$(openstack --os-cloud devstack-admin \
                        --os-region "$REGION_NAME" \
                        network create --project "$project_id" \
                        "$KURYR_NEUTRON_DEFAULT_SERVICE_NET" \
                        -c id -f value)
+    echo "KURYR_NEUTRON_DEFAULT_SERVICE_NET: $KURYR_NEUTRON_DEFAULT_SERVICE_NET" >> ~/k8s/_configure_neutron_defaults
+    echo "service_net_id: $service_net_id"
 
     export KURYR_POD_SUBNETS_IDS=()
     export KURYR_SERVICE_SUBNETS_IDS=()
@@ -1294,6 +1337,7 @@ function _configure_neutron_defaults {
 
     if [[ "$KURYR_K8S_OCTAVIA_MEMBER_MODE" == "L3" ]]; then
         sg_ids+=(${service_pod_access_sg_id})
+        echo "sg_ids: $sg_ids" >> ~/k8s/_configure_neutron_defaults
     elif [[ "$KURYR_K8S_OCTAVIA_MEMBER_MODE" == "L2" ]]; then
         # In case the member connectivity is L2, Octavia by default uses the
         # admin 'default' sg to create a port for the amphora load balancer
